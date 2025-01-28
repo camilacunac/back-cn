@@ -12,6 +12,8 @@ public interface SenalVitalRepository extends JpaRepository<SenalVital, Long> {
     // Método personalizado: buscar señales vitales por paciente
     List<SenalVital> findByPacienteId(Long pacienteId);
 
+    void deleteByPacienteId(Long pacienteId);
+
     // Método personalizado: buscar señales vitales recientes (últimos registros)
     List<SenalVital> findTop10ByPacienteIdOrderByFechaRegistroDesc(Long pacienteId);
 }
