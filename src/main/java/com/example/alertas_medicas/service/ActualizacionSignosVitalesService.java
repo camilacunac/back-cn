@@ -33,13 +33,14 @@ public class ActualizacionSignosVitalesService {
     private RabbitTemplate rabbitTemplate;
 
     @Autowired
-    private RabbitTemplate rabbitTemplateService2; // Para el nuevo reporte
+    private RabbitTemplate rabbitTemplateService2;
 
-    // Generador de valores aleatorios
+    @Autowired
+    private KafkaProducerService kafkaProducerService;
+
     private final Random random = new Random();
 
-    // Actualiza los signos vitales de todos los pacientes cada 30 segundos
-    @Scheduled(fixedRate = 30000) // 30 segundos
+    @Scheduled(fixedRate = 30000)
     @Transactional
     public void actualizarSignosVitales() {
         List<Paciente> pacientes = pacienteRepository.findAll();
@@ -47,30 +48,25 @@ public class ActualizacionSignosVitalesService {
         for (Paciente paciente : pacientes) {
 
             senalVitalRepository.deleteByPacienteId(paciente.getId());
-            // 1. Generar nuevos signos vitales
+
             SenalVital nuevaSenal = generarSignosVitales(paciente);
 
-            // 2. Guardar los nuevos signos vitales en la base de datos
             senalVitalRepository.save(nuevaSenal);
 
-            // 3. Verificar si los valores son anormales
             if (esAnormal(nuevaSenal)) {
-                // Publicar una alerta en RabbitMQ (para alertas inmediatas)
+
                 publicarAlerta(paciente, nuevaSenal);
             }
         }
     }
 
-    // Enviar un reporte histórico de signos vitales cada 1 minuto
     @Scheduled(fixedRate = 60000) // 1 minuto
     public void enviarReporteSignosVitales() {
         List<Paciente> pacientes = pacienteRepository.findAll();
 
         for (Paciente paciente : pacientes) {
-            // Obtener el historial de signos vitales del paciente
             List<SenalVital> historial = senalVitalRepository.findByPacienteId(paciente.getId());
 
-            // Transformar los datos en un objeto de reporte
             HistoricoSignosVitales reporte = new HistoricoSignosVitales(
                     paciente.getId(),
                     paciente.getNombre(),
@@ -82,13 +78,17 @@ public class ActualizacionSignosVitalesService {
                             sv.getTemperatura(),
                             sv.getFechaRegistro())).collect(Collectors.toList()));
 
-            // Enviar el reporte a la segunda cola de RabbitMQ
-            rabbitTemplateService2.convertAndSend(
-                    RabbitMQConfigReport.EXCHANGE_NAME,
-                    RabbitMQConfigReport.ROUTING_KEY,
-                    reporte);
+            // Enviar a RabbitMQ
+            // rabbitTemplateService2.convertAndSend(
+            // RabbitMQConfigReport.EXCHANGE_NAME,
+            // RabbitMQConfigReport.ROUTING_KEY,
+            // reporte);
 
-            System.out.println("📊 Reporte de signos vitales enviado para paciente: " + paciente.getNombre());
+            System.out
+                    .println("📊 Reporte de signos vitales enviado a RabbitMQ para paciente: " + paciente.getNombre());
+
+            // Enviar a Kafka
+            kafkaProducerService.enviarReporteSignosVitales(reporte);
         }
     }
 
@@ -122,12 +122,16 @@ public class ActualizacionSignosVitalesService {
                 senalVital.getSaturacionOxigeno(),
                 LocalDateTime.now());
 
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.EXCHANGE_NAME,
-                RabbitMQConfig.ROUTING_KEY,
-                alerta);
+        // Enviar a RabbitMQ
+        // rabbitTemplate.convertAndSend(
+        // RabbitMQConfig.EXCHANGE_NAME,
+        // RabbitMQConfig.ROUTING_KEY,
+        // alerta);
 
         System.out.println("⚠️ Alerta publicada en RabbitMQ: " + alerta);
+
+        // Enviar a Kafka
+        kafkaProducerService.enviarAlerta(alerta);
     }
 }
 
